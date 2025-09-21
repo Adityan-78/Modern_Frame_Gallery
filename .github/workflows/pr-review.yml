@@ -1,15 +1,19 @@
-name: PR Review
+workflow_yml = f"""name: PR Review
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
-  workflow_dispatch: {}
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+  workflow_dispatch: {{}}
 
 permissions:
   contents: read
   pull-requests: write
 
 concurrency:
-  group: pr-review-${{ github.repository }}-${{ github.event.pull_request.number || github.run_id }}
+  group: pr-review-${{{{ github.repository }}}}-${{{{ github.event.pull_request.number || github.run_id }}}}
   cancel-in-progress: true
 
 jobs:
@@ -18,21 +22,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # If your agent repo is private, provide AGENT_PAT in the target repo's Secrets
       - name: Fetch PR agent (private)
-        if: ${{ secrets.AGENT_PAT != '' }}
+        if: ${{{{ secrets.AGENT_PAT && secrets.AGENT_PAT != '' }}}}
         uses: actions/checkout@v4
         with:
-          repository: Adityan-78/pr-review-agent-supreme
-          ref: main
+          repository: {agent_repo_full}
+          ref: {agent_ref}
           path: pr-agent
-          token: ${{ secrets.AGENT_PAT }}
+          token: ${{{{ secrets.AGENT_PAT }}}}
 
+      # Public agent repo (no token needed)
       - name: Fetch PR agent (public)
-        if: ${{ secrets.AGENT_PAT == '' }}
+        if: ${{{{ !secrets.AGENT_PAT || secrets.AGENT_PAT == '' }}}}
         uses: actions/checkout@v4
         with:
-          repository: Adityan-78/pr-review-agent-supreme
-          ref: main
+          repository: {agent_repo_full}
+          ref: {agent_ref}
           path: pr-agent
 
       - uses: actions/setup-python@v5
@@ -47,8 +53,9 @@ jobs:
 
       - name: Run agent on this PR
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{{{ secrets.GITHUB_TOKEN }}}}
+          GEMINI_API_KEY: ${{{{ secrets.GEMINI_API_KEY }}}}
           PYTHONPATH: pr-agent
         run: |
-          python -m agent.cli analyze --provider github --repo "${{ github.repository }}" --pr "${{ github.event.pull_request.number }}"
+          python -m agent.cli analyze --provider github --repo "${{{{ github.repository }}}}" --pr "${{{{ github.event.pull_request.number }}}}"
+"""
