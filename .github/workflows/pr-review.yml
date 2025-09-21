@@ -1,61 +1,49 @@
-workflow_yml = f"""name: PR Review
+name: PR Review
+
 on:
   pull_request:
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - ready_for_review
-  workflow_dispatch: {{}}
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
   pull-requests: write
 
-concurrency:
-  group: pr-review-${{{{ github.repository }}}}-${{{{ github.event.pull_request.number || github.run_id }}}}
-  cancel-in-progress: true
-
 jobs:
   review:
     runs-on: ubuntu-latest
     steps:
+      - name: Debug context
+        shell: bash
+        run: |
+          echo "event=${{ github.event_name }}"
+          echo "repo=${{ github.repository }}"
+          echo "pr=${{ github.event.pull_request.number }}"
+
       - uses: actions/checkout@v4
-
-      # If your agent repo is private, provide AGENT_PAT in the target repo's Secrets
-      - name: Fetch PR agent (private)
-        if: ${{{{ secrets.AGENT_PAT && secrets.AGENT_PAT != '' }}}}
-        uses: actions/checkout@v4
-        with:
-          repository: {agent_repo_full}
-          ref: {agent_ref}
-          path: pr-agent
-          token: ${{{{ secrets.AGENT_PAT }}}}
-
-      # Public agent repo (no token needed)
-      - name: Fetch PR agent (public)
-        if: ${{{{ !secrets.AGENT_PAT || secrets.AGENT_PAT == '' }}}}
-        uses: actions/checkout@v4
-        with:
-          repository: {agent_repo_full}
-          ref: {agent_ref}
-          path: pr-agent
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install deps
+      - name: Fetch agent source
+        shell: bash
         run: |
+          set -e
+          git clone --depth 1 --branch main https://github.com/Adityan-78/pr-review-agent-supreme agent_src
+          echo "PYTHONPATH=$GITHUB_WORKSPACE/agent_src" >> "$GITHUB_ENV"
+
+      - name: Install deps
+        shell: bash
+        run: |
+          set -e
           python -m pip install --upgrade pip
-          if [ -f pr-agent/requirements.txt ]; then pip install -r pr-agent/requirements.txt; fi
+          pip install -r agent_src/requirements.txt
           pip install flake8 bandit pyyaml
 
-      - name: Run agent on this PR
+      - name: Run agent
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{{{ secrets.GITHUB_TOKEN }}}}
-          GEMINI_API_KEY: ${{{{ secrets.GEMINI_API_KEY }}}}
-          PYTHONPATH: pr-agent
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python -m agent.cli analyze --provider github --repo "${{{{ github.repository }}}}" --pr "${{{{ github.event.pull_request.number }}}}"
-"""
+          set -e
+          python -m agent.cli analyze --provider github --repo "${{ github.repository }}" --pr "${{ github.event.pull_request.number }}"
